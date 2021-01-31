@@ -8,7 +8,7 @@ namespace shipping
     {
         static void Main(string[] args)
         {
-            var packages = new List<string> { "A", "B", "B" };
+            var packages = new List<string> { "A", "A", "B", "A", "B", "B", "A", "B" };
             var app = new App();
 
             var result = app.Run(packages);
@@ -19,45 +19,41 @@ namespace shipping
 
     public class App
     {
+        private readonly List<Package> _deliveries = Enumerable.Empty<Package>().ToList();
+        private readonly Queue<Package> _boatQueue = new Queue<Package>();
+        private readonly Queue<Package> _truckQueue = new Queue<Package>();
+
         public int Run(IEnumerable<string> destinationInputs)
         {
-            var packages = destinationInputs.Select(x => new Package { Desination = x }).ToList();
-            if (packages.Count == 0 )
-            {
-                return 0;
-            }
-
-            var truckQueue = new Queue<Package>(packages);
-            var boatQueue = new Queue<Package>();
+            _deliveries.AddRange(destinationInputs.Select(x => new Package { Desination = x }));
+            _deliveries.ForEach(x => _truckQueue.Enqueue(x));
 
             var trucks = new List<Transport> { new Transport(), new Transport() };
             var boat = new Transport();
-            
-            var run = packages.All(x => !x.Delivered);
+
             var time = 0;
+            var run = _deliveries.Any(x => !x.Delivered);
             while (run)
             {
-                Load(truckQueue, trucks, boatQueue, boat);
+                Load(trucks, boat);
+                
+                time = Transport(trucks, boat, time);
 
-                Transport(trucks, boat);
+                Offload(trucks, boat);
 
-                Offload(trucks, boat, boatQueue);
-
-                run = packages.All(x => !x.Delivered);
-
-                time++;
+                run = _deliveries.Any(x => !x.Delivered);
             }
 
             return time;
         }
 
-        private void Load(Queue<Package> truckQueue, List<Transport> trucks, Queue<Package> boatQueue, Transport boat)
+        private void Load(List<Transport> trucks, Transport boat)
         {
             foreach (var truck in trucks)
             {
-                if (truckQueue.Any() && !truck.Packages.Any() && !truck.Delivering && !truck.Returning)
+                if (_truckQueue.Any() && !truck.Packages.Any() && !truck.Delivering && truck.Returning && truck.Eta == 0)
                 {
-                    var package = truckQueue.Dequeue();
+                    var package = _truckQueue.Dequeue();
 
                     truck.Packages.Add(package);
                     truck.Delivering = true;
@@ -66,9 +62,9 @@ namespace shipping
                 }
             }
 
-            if (boatQueue.Any() && !boat.Packages.Any() && !boat.Delivering && !boat.Returning)
+            if (_boatQueue.Any() && !boat.Packages.Any() && !boat.Delivering && boat.Returning && boat.Eta == 0)
             {
-                var package = boatQueue.Dequeue();
+                var package = _boatQueue.Dequeue();
 
                 boat.Packages.Add(package);
                 boat.Delivering = true;
@@ -77,23 +73,25 @@ namespace shipping
             }
         }
 
-        private void Transport(List<Transport> trucks, Transport boat)
+        private int Transport(List<Transport> trucks, Transport boat, int time)
         {
             foreach (var truck in trucks)
             {
                 if (truck.Delivering || truck.Returning)
                 {
-                    truck.Eta--;
+                    truck.Eta = Math.Clamp(truck.Eta - 1, 0 , 5);
                 }
             }
 
             if (boat.Delivering || boat.Returning)
             {
-                boat.Eta--;
+                boat.Eta = Math.Clamp(boat.Eta - 1, 0, 4);
             }
+
+            return ++time;
         }
 
-        private void Offload(List<Transport> trucks, Transport boat, Queue<Package> boatQueue)
+        private void Offload(List<Transport> trucks, Transport boat)
         {
             foreach (var truck in trucks)
             {
@@ -109,7 +107,7 @@ namespace shipping
                 }
                 else if (truck.Delivering && truck.Eta == 0 && package?.Desination == "A")
                 {
-                    boatQueue.Enqueue(package);
+                    _boatQueue.Enqueue(package);
 
                     truck.Packages.Remove(package);
                     truck.Delivering = false;
@@ -126,7 +124,7 @@ namespace shipping
                 boat.Packages.Remove(package);
                 boat.Delivering = false;
                 boat.Returning = true;
-                boat.Eta = 1;
+                boat.Eta = 4;
             }
         }
     }
@@ -144,7 +142,7 @@ namespace shipping
 
         public bool Delivering { get; set; }
 
-        public bool Returning { get; set; }
+        public bool Returning { get; set; } = true; //NOTE: Ugly fugly
 
         public int Eta { get; set; }
     }
