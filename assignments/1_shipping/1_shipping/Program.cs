@@ -8,10 +8,9 @@ namespace shipping
     {
         static void Main(string[] args)
         {
-            var packages = new List<string> { "A", "A", "B", "A", "B", "B", "A", "B" };
             var app = new App();
 
-            var result = app.Run(packages);
+            var result = app.Run(args);
 
             Console.WriteLine($"Time to deliver: {result} h");
         }
