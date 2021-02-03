@@ -19,26 +19,29 @@ namespace shipping
     public class App
     {
         private readonly List<Package> _deliveries = Enumerable.Empty<Package>().ToList();
+        private readonly IEnumerable<Transport> _transports = new List<Transport>
+        {
+            new Transport { Type = TransportType.Truck },
+            new Transport { Type = TransportType.Truck },
+            new Transport { Type = TransportType.Boat }
+        };
         private readonly Queue<Package> _boatQueue = new Queue<Package>();
         private readonly Queue<Package> _truckQueue = new Queue<Package>();
 
         public int Run(IEnumerable<string> destinationInputs)
         {
-            _deliveries.AddRange(destinationInputs.Select(x => new Package { Desination = x }));
+            _deliveries.AddRange(destinationInputs.Select(x => new Package { Desination = x, CurrentDestination = x == "A" ? Desitnation.Port : Desitnation.B }));
             _deliveries.ForEach(x => _truckQueue.Enqueue(x));
-
-            var trucks = new List<Transport> { new Transport(), new Transport() };
-            var boat = new Transport();
 
             var time = 0;
             var run = _deliveries.Any(x => !x.Delivered);
             while (run)
             {
-                Load(trucks, boat);
-                
-                time = Transport(trucks, boat, time);
+                Load();
 
-                Offload(trucks, boat);
+                time = Transport(time);
+
+                Offload();
 
                 run = _deliveries.Any(x => !x.Delivered);
             }
@@ -46,84 +49,91 @@ namespace shipping
             return time;
         }
 
-        private void Load(List<Transport> trucks, Transport boat)
+        private void Load()
         {
-            foreach (var truck in trucks)
+            foreach (var transport in _transports)
             {
-                if (_truckQueue.Any() && !truck.Packages.Any() && !truck.Delivering && truck.Returning && truck.Eta == 0)
+                switch (transport.Type)
                 {
-                    var package = _truckQueue.Dequeue();
-
-                    truck.Packages.Add(package);
-                    truck.Delivering = true;
-                    truck.Returning = false;
-                    truck.Eta = package.Desination == "A" ? 1 : 5;
+                    case TransportType.Truck:
+                        LoadTransport(transport, _truckQueue);
+                        break;
+                    case TransportType.Boat:
+                        LoadTransport(transport, _boatQueue);
+                        break;
                 }
-            }
-
-            if (_boatQueue.Any() && !boat.Packages.Any() && !boat.Delivering && boat.Returning && boat.Eta == 0)
-            {
-                var package = _boatQueue.Dequeue();
-
-                boat.Packages.Add(package);
-                boat.Delivering = true;
-                boat.Returning = false;
-                boat.Eta = 4;
             }
         }
 
-        private int Transport(List<Transport> trucks, Transport boat, int time)
+        private void LoadTransport(Transport transport, Queue<Package> packages)
         {
-            foreach (var truck in trucks)
+            if (packages.Any() && !transport.Delivering && transport.Eta == 0)
             {
-                if (truck.Delivering || truck.Returning)
-                {
-                    truck.Eta = Math.Clamp(truck.Eta - 1, 0 , 5);
-                }
-            }
+                var package = packages.Dequeue();
 
-            if (boat.Delivering || boat.Returning)
+                transport.Packages.Add(package);
+                transport.Delivering = true;
+                transport.Eta = CalculateEta(package.CurrentDestination);
+            }
+        }
+
+        private int CalculateEta(Desitnation desitnation)
+        {
+            switch (desitnation)
             {
-                boat.Eta = Math.Clamp(boat.Eta - 1, 0, 4);
+                case Desitnation.A:
+                    return 4;
+                case Desitnation.B:
+                    return 5;
+                case Desitnation.Port:
+                    return 1;
+                default:
+                    return 0;
+            }
+        }
+
+        private int Transport(int time)
+        {
+            foreach (var transport in _transports)
+            {
+                transport.Eta = Math.Clamp(transport.Eta - 1, 0, 5);
             }
 
             return ++time;
         }
 
-        private void Offload(List<Transport> trucks, Transport boat)
+        private void Offload()
         {
-            foreach (var truck in trucks)
+            foreach (var transport in _transports)
             {
-                var package = truck.Packages.FirstOrDefault();
-                if (truck.Delivering && truck.Eta == 0 && package?.Desination == "B")
+                if (transport.Delivering && transport.Eta == 0)
                 {
-                    package.Delivered = true;
+                    var package = transport.Packages.First();
+                    transport.Packages.Remove(package);
+                    transport.Delivering = false;
+                    transport.Eta = CalculateEta(package.CurrentDestination);
 
-                    truck.Packages.Remove(package);
-                    truck.Delivering = false;
-                    truck.Returning = true;
-                    truck.Eta = 5;
-                }
-                else if (truck.Delivering && truck.Eta == 0 && package?.Desination == "A")
-                {
-                    _boatQueue.Enqueue(package);
-
-                    truck.Packages.Remove(package);
-                    truck.Delivering = false;
-                    truck.Returning = true;
-                    truck.Eta = 1;
+                    UpdatePackage(package);
                 }
             }
+        }
 
-            if (boat.Delivering && boat.Eta == 0)
+        private void UpdatePackage(Package package)
+        {
+            switch (package.CurrentDestination)
             {
-                var package = boat.Packages.First();
-                package.Delivered = true;
-
-                boat.Packages.Remove(package);
-                boat.Delivering = false;
-                boat.Returning = true;
-                boat.Eta = 4;
+                case Desitnation.A:
+                case Desitnation.B:
+                    {
+                        package.Delivered = true;
+                        break;
+                    }
+                case Desitnation.Port:
+                    {
+                        package.CurrentDestination = Desitnation.A;
+                        _boatQueue.Enqueue(package);
+                        break;
+                    }
             }
         }
     }
@@ -132,17 +142,32 @@ namespace shipping
     {
         public string Desination { get; set; }
 
+        public Desitnation CurrentDestination { get; set; }
+
         public bool Delivered { get; set; }
     }
 
     public class Transport
     {
+        public TransportType Type { get; set; }
+
         public List<Package> Packages { get; set; } = Enumerable.Empty<Package>().ToList();
 
         public bool Delivering { get; set; }
 
-        public bool Returning { get; set; } = true; //NOTE: Ugly fugly
-
         public int Eta { get; set; }
+    }
+
+    public enum Desitnation
+    {
+        A,
+        B,
+        Port
+    }
+
+    public enum TransportType
+    {
+        Truck,
+        Boat
     }
 }
